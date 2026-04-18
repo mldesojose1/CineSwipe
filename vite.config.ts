@@ -1,12 +1,10 @@
-import { defineConfig, splitVendorChunkPlugin } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
-    // Separa node_modules en su propio chunk (vendor) automáticamente
-    splitVendorChunkPlugin(),
   ],
 
   build: {
