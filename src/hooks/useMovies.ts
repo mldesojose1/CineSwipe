@@ -14,172 +14,177 @@ export interface UseMoviesReturn {
   loadMore: () => void;
 }
 
+interface MoviesState {
+  data: TMDBMovie[];
+  loading: boolean;
+  error: string | null;
+  hasMore: boolean;
+}
+
 const CACHE_PREFIX = 'cineswipe_cache_';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/**
- * Custom hook to fetch discover movies from TMDB API v3.
- * Supports pagination, genre/year filtering, and session storage caching (5 min TTL).
- * 
- * @param {UseMoviesOptions} options - Optional filters for the query (genreId, year).
- * @returns {UseMoviesReturn} Object containing movies data, loading state, error state, and pagination handler.
- */
-export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
-  const [movies, setMovies] = useState<TMDBMovie[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState<number>(1);
-  const [hasMore, setHasMore] = useState<boolean>(true);
+// ─── Helpers ───────────────────────────────────────────────────────────────
 
-  // References to track stable filter values across dependency array triggers
+const getCacheKey = (page: number, genreId?: string | number, year?: string | number) => {
+  const params = new URLSearchParams({
+    page: page.toString(),
+    genreId: genreId?.toString() || '',
+    year: year?.toString() || ''
+  });
+  return `${CACHE_PREFIX}${params.toString()}`;
+};
+
+const getCachedData = (key: string): TMDBDiscoverResponse | null => {
+  const item = sessionStorage.getItem(key);
+  if (!item) return null;
+  try {
+    const { timestamp, data } = JSON.parse(item);
+    if (Date.now() - timestamp > CACHE_TTL_MS) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+    return isTMDBDiscoverResponse(data) ? data : null;
+  } catch {
+    sessionStorage.removeItem(key);
+    return null;
+  }
+};
+
+const saveToCache = (key: string, data: TMDBDiscoverResponse) => {
+  sessionStorage.setItem(key, JSON.stringify({
+    timestamp: Date.now(),
+    data
+  }));
+};
+
+// ─── Hook implementation ──────────────────────────────────────────────────
+
+export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
+  const [state, setState] = useState<MoviesState>({
+    data: [],
+    loading: true,
+    error: null,
+    hasMore: true,
+  });
+  const [page, setPage] = useState<number>(1);
+
   const genreRef = useRef(options.genreId);
   const yearRef = useRef(options.year);
-  
-  // Abort controller reference to cancel pending requests on unmount or re-fetch
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Reset page and internal refs if externally passed filters change
+  // Reset state on filter change
   useEffect(() => {
     if (options.genreId !== genreRef.current || options.year !== yearRef.current) {
-      setMovies([]);
-      setPage(1);
-      setHasMore(true);
-      setError(null);
       genreRef.current = options.genreId;
       yearRef.current = options.year;
+      setState({
+        data: [],
+        loading: true,
+        error: null,
+        hasMore: true,
+      });
+      setPage(1);
     }
   }, [options.genreId, options.year]);
 
-  useEffect(() => {
-    const cacheParams = {
-      page: page.toString(),
-      genreId: genreRef.current?.toString() || '',
-      year: yearRef.current?.toString() || ''
-    };
-    const cacheKey = `${CACHE_PREFIX}${new URLSearchParams(cacheParams).toString()}`;
+  const fetchMovies = useCallback(async (currentPage: number, isMounted: boolean) => {
+    const currentGenre = genreRef.current;
+    const currentYear = yearRef.current;
+    const cacheKey = getCacheKey(currentPage, currentGenre, currentYear);
 
-    // 1. Check valid cache on sessionStorage before fetching
-    const cachedItem = sessionStorage.getItem(cacheKey);
-    if (cachedItem) {
-      try {
-        const parsedCache = JSON.parse(cachedItem);
-        const { timestamp, data } = parsedCache;
-        const isExpired = Date.now() - timestamp > CACHE_TTL_MS;
-
-        if (!isExpired && isTMDBDiscoverResponse(data)) {
-          setMovies(prev => page === 1 ? data.results : [...prev, ...data.results]);
-          setHasMore(page < data.total_pages);
-          setLoading(false);
-          return;
-        } else {
-          sessionStorage.removeItem(cacheKey);
-        }
-      } catch (err) {
-        sessionStorage.removeItem(cacheKey);
-      }
+    // 1. Wait for prefetch if applicable (only page 1, no filters)
+    if (currentPage === 1 && !currentGenre && !currentYear) {
+      const prefetch = (window as any).__cineswipe_prefetch__;
+      if (prefetch) await prefetch;
     }
 
-    // 2. Setup tracking for unmounted component
+    if (!isMounted) return;
+
+    // 2. Try cache
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      setState(prev => ({
+        ...prev,
+        data: currentPage === 1 ? cached.results : [...prev.data, ...cached.results],
+        hasMore: currentPage < cached.total_pages,
+        loading: false,
+      }));
+      return;
+    }
+
+    // 3. Fetch from API
+    setState(prev => ({ ...prev, loading: true, error: null }));
+
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    try {
+      const apiKey = import.meta.env.VITE_TMDB_KEY;
+      if (!apiKey) throw new Error("Missing TMDB API Key.");
+
+      const url = new URL('https://api.themoviedb.org/3/discover/movie');
+      url.searchParams.append('include_adult', 'false');
+      url.searchParams.append('language', 'en-US');
+      url.searchParams.append('page', currentPage.toString());
+      if (currentGenre) url.searchParams.append('with_genres', currentGenre.toString());
+      if (currentYear) url.searchParams.append('primary_release_year', currentYear.toString());
+
+      const response = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${apiKey}`, accept: 'application/json' },
+        signal: abortController.signal
+      });
+
+      if (!response.ok) {
+        const errorMap: Record<number, string> = {
+          401: 'Invalid TMDB API Key.',
+          404: 'Endpoint not found.',
+          429: 'Rate limit exceeded. Please wait.'
+        };
+        throw new Error(errorMap[response.status] || `Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!isTMDBDiscoverResponse(data)) throw new Error('Invalid response format.');
+
+      if (isMounted) {
+        saveToCache(cacheKey, data);
+        setState(prev => ({
+          ...prev,
+          data: currentPage === 1 ? data.results : [...prev.data, ...data.results],
+          hasMore: currentPage < data.total_pages,
+          loading: false
+        }));
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError' || !isMounted) return;
+      setState(prev => ({ ...prev, error: err.message, loading: false }));
+    }
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
-    
-    const fetchMovies = async () => {
-      setLoading(true);
-      setError(null);
-      
-      // Cancel previous request if still pending
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+    fetchMovies(page, isMounted);
 
-      try {
-        // As requested: key loaded from env, strictly not hardcoded
-        const apiKey = import.meta.env.VITE_TMDB_KEY;
-        
-        if (!apiKey) {
-          throw new Error("Missing TMDB API Key. Please configure VITE_TMDB_KEY in your .env file.");
-        }
-
-        const url = new URL('https://api.themoviedb.org/3/discover/movie');
-        url.searchParams.append('include_adult', 'false');
-        url.searchParams.append('include_video', 'false');
-        url.searchParams.append('language', 'en-US');
-        url.searchParams.append('page', page.toString());
-        
-        if (genreRef.current) {
-          url.searchParams.append('with_genres', genreRef.current.toString());
-        }
-        if (yearRef.current) {
-          url.searchParams.append('primary_release_year', yearRef.current.toString());
-        }
-
-        const response = await fetch(url.toString(), {
-          headers: {
-            // Using Authorization Bearer instead of ?api_key= for modern security
-            Authorization: `Bearer ${apiKey}`,
-            accept: 'application/json'
-          },
-          signal: abortController.signal
-        });
-
-        // Error handling as requested
-        if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error('Unauthorized [401]: TMDB API Key is invalid or expired.');
-          } else if (response.status === 404) {
-            throw new Error('Not Found [404]: Endpoints or requested TMDB resource does not exist.');
-          } else if (response.status === 429) {
-            throw new Error('Rate Limit Exceeded [429]: Too many requests. Please wait a moment.');
-          }
-          throw new Error(`An error occurred: Status ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // 3. Type Guard validation on API data
-        if (!isTMDBDiscoverResponse(data)) {
-          throw new Error('Invalid TMDB API response format.');
-        }
-
-        if (isMounted) {
-          // 4. Update state and Session Storage Cache
-          sessionStorage.setItem(cacheKey, JSON.stringify({
-            timestamp: Date.now(),
-            data: data
-          }));
-
-          setMovies(prev => page === 1 ? data.results : [...prev, ...data.results]);
-          setHasMore(page < data.total_pages);
-        }
-
-      } catch (err: any) {
-        // Do not update error state if the reason was intentional abort
-        if (err.name !== 'AbortError' && isMounted) {
-          setError(err.message || 'Unknown error fetching movies.');
-        }
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    fetchMovies();
-
-    // 5. Cleanup function
     return () => {
       isMounted = false;
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort(); // Cancel ongoing fetch
-      }
+      if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [page, options.genreId, options.year]);
+  }, [page, options.genreId, options.year, fetchMovies]);
 
   const loadMore = useCallback(() => {
-    if (!loading && hasMore) {
+    if (!state.loading && state.hasMore) {
       setPage(prev => prev + 1);
     }
-  }, [loading, hasMore]);
+  }, [state.loading, state.hasMore]);
 
-  return { movies, loading, error, hasMore, loadMore };
+  return { 
+    movies: state.data, 
+    loading: state.loading, 
+    error: state.error, 
+    hasMore: state.hasMore, 
+    loadMore 
+  };
 };
+
