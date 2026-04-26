@@ -1,8 +1,9 @@
-import React, { Suspense, lazy } from 'react'
+import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 import { MovieHistoryProvider } from './context/MovieContext'
 import { isTMDBDiscoverResponse } from './types/tmdb.types'
+import App from './app/App'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PREFETCH ANTICIPADO — se ejecuta ANTES de que React monte
@@ -88,6 +89,16 @@ if (apiKey && !hasFreshCache()) {
           PREFETCH_CACHE_KEY,
           JSON.stringify({ timestamp: Date.now(), data })
         );
+        // Preload de la primera imagen (Mejora LCP)
+        if (data.results && data.results.length > 0 && data.results[0].poster_path) {
+          const firstPoster = `https://image.tmdb.org/t/p/w500${data.results[0].poster_path}`;
+          const link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.href = firstPoster;
+          link.setAttribute('fetchpriority', 'high');
+          document.head.appendChild(link);
+        }
       }
       return data;
     })
@@ -103,31 +114,11 @@ if (apiKey && !hasFreshCache()) {
 // ─────────────────────────────────────────────────────────────────────────────
 // React mount — DESPUÉS del prefetch iniciado (pero sin await: no bloquea)
 // ─────────────────────────────────────────────────────────────────────────────
-const App = lazy(() => import('./app/App'))
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <MovieHistoryProvider>
-      <Suspense
-        fallback={
-          <div
-            style={{
-              minHeight: '100vh',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'linear-gradient(160deg, #0f1923 0%, #1a2535 60%, #0f1923 100%)',
-              color: '#6b7280',
-              fontSize: '0.9rem',
-              fontFamily: 'Inter, sans-serif',
-            }}
-          >
-            Cargando CineSwipe...
-          </div>
-        }
-      >
-        <App />
-      </Suspense>
+      <App />
     </MovieHistoryProvider>
   </React.StrictMode>,
 )

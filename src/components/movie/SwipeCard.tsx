@@ -32,9 +32,9 @@ const buildTmdbUrl = (posterUrl: string, size: 'w300' | 'w500'): string =>
 // Se envuelve en memo() al final del archivo con comparador personalizado
 const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 80 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX]         = useState(0);
-  const [offsetX, setOffsetX]       = useState(0);
-  const [isLoaded, setIsLoaded]     = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [offsetX, setOffsetX] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -58,9 +58,9 @@ const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 
     if (!isDragging) return;
     setIsDragging(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    if (offsetX > threshold)       onSwipe('right');
+    if (offsetX > threshold) onSwipe('right');
     else if (offsetX < -threshold) onSwipe('left');
-    else                           setOffsetX(0);
+    else setOffsetX(0);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -75,7 +75,7 @@ const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 
     transition: isDragging ? 'none' : 'transform 0.3s ease-out',
   };
 
-  const showLike    = offsetX > threshold;
+  const showLike = offsetX > threshold;
   const showDislike = offsetX < -threshold;
 
   // useMemo para URLs: regex se ejecutaría 60×/seg sin memoización
@@ -116,13 +116,13 @@ const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 
         className="poster-placeholder"
       />
 
-      {/* Imagen con lazy loading + srcset + blur-up */}
+      {/* Imagen sin lazy loading, con alta prioridad para mejorar LCP + srcset + blur-up */}
       <img
         src={src500}
         srcSet={`${src300} 300w, ${src500} 500w`}
         sizes="(max-width: 640px) 300px, 500px"
         alt={movie.title}
-        loading="lazy"
+        fetchPriority="high"
         decoding="async"
         draggable="false"
         onLoad={handleLoad}
@@ -132,9 +132,9 @@ const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 
           objectFit: 'cover',
           pointerEvents: 'none',
           zIndex: 2,
-          filter:    isLoaded ? 'blur(0px)' : 'blur(8px)',
-          transform: isLoaded ? 'scale(1)'  : 'scale(1.05)',
-          opacity:   isLoaded ? 1 : 0.6,
+          filter: isLoaded ? 'blur(0px)' : 'blur(8px)',
+          transform: isLoaded ? 'scale(1)' : 'scale(1.05)',
+          opacity: isLoaded ? 1 : 0.6,
           transition: 'filter 0.4s ease-out, transform 0.4s ease-out, opacity 0.4s ease-out',
           willChange: 'filter, transform, opacity',
         }}
@@ -175,8 +175,8 @@ const SwipeCardInner: React.FC<SwipeCardProps> = ({ movie, onSwipe, threshold = 
 // Con comparador: solo re-renderiza cuando cambia el ID de la película.
 function arePropsEqual(prev: SwipeCardProps, next: SwipeCardProps): boolean {
   return (
-    prev.movie.id  === next.movie.id &&
-    prev.onSwipe   === next.onSwipe  &&
+    prev.movie.id === next.movie.id &&
+    prev.onSwipe === next.onSwipe &&
     prev.threshold === next.threshold
   );
 }

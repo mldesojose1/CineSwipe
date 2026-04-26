@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { TMDBMovie, TMDBDiscoverResponse, isTMDBDiscoverResponse } from '../types/tmdb.types';
+import { TMDBMovie, isTMDBDiscoverResponse } from '../types/tmdb.types';
+import { useTMDBCache } from './useTMDBCache';
+import { useMoviePagination } from './useMoviePagination';
 
 export interface UseMoviesOptions {
   genreId?: string | number;
@@ -18,45 +20,7 @@ interface MoviesState {
   data: TMDBMovie[];
   loading: boolean;
   error: string | null;
-  hasMore: boolean;
 }
-
-const CACHE_PREFIX = 'cineswipe_cache_';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-const getCacheKey = (page: number, genreId?: string | number, year?: string | number) => {
-  const params = new URLSearchParams({
-    page: page.toString(),
-    genreId: genreId?.toString() || '',
-    year: year?.toString() || ''
-  });
-  return `${CACHE_PREFIX}${params.toString()}`;
-};
-
-const getCachedData = (key: string): TMDBDiscoverResponse | null => {
-  const item = sessionStorage.getItem(key);
-  if (!item) return null;
-  try {
-    const { timestamp, data } = JSON.parse(item);
-    if (Date.now() - timestamp > CACHE_TTL_MS) {
-      sessionStorage.removeItem(key);
-      return null;
-    }
-    return isTMDBDiscoverResponse(data) ? data : null;
-  } catch {
-    sessionStorage.removeItem(key);
-    return null;
-  }
-};
-
-const saveToCache = (key: string, data: TMDBDiscoverResponse) => {
-  sessionStorage.setItem(key, JSON.stringify({
-    timestamp: Date.now(),
-    data
-  }));
-};
 
 // ─── Hook implementation ──────────────────────────────────────────────────
 
@@ -65,15 +29,16 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
     data: [],
     loading: true,
     error: null,
-    hasMore: true,
   });
-  const [page, setPage] = useState<number>(1);
+
+  const { page, hasMore, loadMore, updateHasMore } = useMoviePagination(options.genreId, options.year);
+  const { getCacheKey, getCachedData, saveToCache } = useTMDBCache();
 
   const genreRef = useRef(options.genreId);
   const yearRef = useRef(options.year);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Reset state on filter change
+  // Reiniciar el estado base de los datos si los filtros cambian
   useEffect(() => {
     if (options.genreId !== genreRef.current || options.year !== yearRef.current) {
       genreRef.current = options.genreId;
@@ -82,9 +47,7 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
         data: [],
         loading: true,
         error: null,
-        hasMore: true,
       });
-      setPage(1);
     }
   }, [options.genreId, options.year]);
 
@@ -107,9 +70,9 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
       setState(prev => ({
         ...prev,
         data: currentPage === 1 ? cached.results : [...prev.data, ...cached.results],
-        hasMore: currentPage < cached.total_pages,
         loading: false,
       }));
+      updateHasMore(currentPage < cached.total_pages);
       return;
     }
 
@@ -153,15 +116,15 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
         setState(prev => ({
           ...prev,
           data: currentPage === 1 ? data.results : [...prev.data, ...data.results],
-          hasMore: currentPage < data.total_pages,
           loading: false
         }));
+        updateHasMore(currentPage < data.total_pages);
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || !isMounted) return;
       setState(prev => ({ ...prev, error: err.message, loading: false }));
     }
-  }, []);
+  }, [getCacheKey, getCachedData, saveToCache, updateHasMore]);
 
   useEffect(() => {
     let isMounted = true;
@@ -173,18 +136,17 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
     };
   }, [page, options.genreId, options.year, fetchMovies]);
 
-  const loadMore = useCallback(() => {
-    if (!state.loading && state.hasMore) {
-      setPage(prev => prev + 1);
+  const handleLoadMore = useCallback(() => {
+    if (!state.loading && hasMore) {
+      loadMore();
     }
-  }, [state.loading, state.hasMore]);
+  }, [state.loading, hasMore, loadMore]);
 
-  return { 
-    movies: state.data, 
-    loading: state.loading, 
-    error: state.error, 
-    hasMore: state.hasMore, 
-    loadMore 
+  return {
+    movies: state.data,
+    loading: state.loading,
+    error: state.error,
+    hasMore,
+    loadMore: handleLoadMore
   };
 };
-
