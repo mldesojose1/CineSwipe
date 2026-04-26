@@ -28,7 +28,7 @@ describe('useMovies', () => {
     afterEach(() => {
         vi.unstubAllEnvs();
         vi.restoreAllMocks();
-        delete (window as Window & { __cineswipe_prefetch__?: Promise<void> }).__cineswipe_prefetch__;
+        Reflect.deleteProperty(window, '__cineswipe_prefetch__');
     });
 
     it('debe iniciar en loading y resolver la respuesta correctamente', async () => {

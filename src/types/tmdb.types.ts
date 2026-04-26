@@ -26,12 +26,12 @@ export interface TMDBDiscoverResponse {
  * Type guard to validate that incoming data shape matches TMDBDiscoverResponse
  */
 export const isTMDBDiscoverResponse = (data: unknown): data is TMDBDiscoverResponse => {
+  if (typeof data !== 'object' || data === null) return false;
+  const record = data as Record<string, unknown>;
   return (
-    typeof data === 'object' &&
-    data !== null &&
-    typeof data.page === 'number' &&
-    Array.isArray(data.results) &&
-    typeof data.total_pages === 'number' &&
-    typeof data.total_results === 'number'
+    typeof record.page === 'number' &&
+    Array.isArray(record.results) &&
+    typeof record.total_pages === 'number' &&
+    typeof record.total_results === 'number'
   );
 };
