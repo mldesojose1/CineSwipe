@@ -30,7 +30,7 @@ describe('useMoviePagination', () => {
 
     it('debe resetear la paginación a la página 1 al cambiar las dependencias de género o año', () => {
         const { result, rerender } = renderHook(
-            ({ genreId, year }) => useMoviePagination(genreId, year),
+            ({ genreId, year }: { genreId?: number | string; year?: number | string }) => useMoviePagination(genreId, year),
             { initialProps: { genreId: 28, year: 2023 } }
         );
 

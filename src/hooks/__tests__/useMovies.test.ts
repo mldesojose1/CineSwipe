@@ -96,7 +96,7 @@ describe('useMovies', () => {
 
     it('debe cancelar exitosamente la petición fetch cuando se desmonta (AbortController)', async () => {
         let abortSignal: AbortSignal | null = null;
-        vi.stubGlobal('fetch', vi.fn().mockImplementation((url, options) => {
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, options) => {
             abortSignal = options.signal;
             return new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => resolve({ ok: true, json: () => ({}) }), 5000);

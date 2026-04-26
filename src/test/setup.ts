@@ -10,4 +10,5 @@ const sessionStorageMock = (() => {
         clear: () => { store = {} },
     }
 })()
+
 Object.defineProperty(window, 'sessionStorage', { value: sessionStorageMock })
