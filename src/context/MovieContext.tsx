@@ -1,3 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
+// Este archivo exporta intencionalmente el provider, el reducer y los hooks
+// desde el mismo módulo (patrón estándar de Context API en React).
 import React, { createContext, useContext, useReducer, useEffect, useMemo, ReactNode } from 'react';
 import { TMDBMovie } from '../types/tmdb.types';
 

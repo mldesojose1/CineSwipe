@@ -25,7 +25,7 @@ export interface TMDBDiscoverResponse {
 /**
  * Type guard to validate that incoming data shape matches TMDBDiscoverResponse
  */
-export const isTMDBDiscoverResponse = (data: any): data is TMDBDiscoverResponse => {
+export const isTMDBDiscoverResponse = (data: unknown): data is TMDBDiscoverResponse => {
   return (
     typeof data === 'object' &&
     data !== null &&

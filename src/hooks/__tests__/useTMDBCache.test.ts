@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useTMDBCache } from '../useTMDBCache';
+import type { TMDBDiscoverResponse } from '../../types/tmdb.types';
 
 describe('useTMDBCache', () => {
     beforeEach(() => {
@@ -27,7 +28,7 @@ describe('useTMDBCache', () => {
         vi.setSystemTime(new Date('2026-01-01T10:00:00Z'));
 
         // Ignorando el tipado estricto para simular la data mínima para el test
-        const mockData: any = { page: 1, results: [], total_pages: 1, total_results: 0 };
+        const mockData: TMDBDiscoverResponse = { page: 1, results: [], total_pages: 1, total_results: 0 };
         result.current.saveToCache('test_key', mockData);
 
         const item = sessionStorage.getItem('test_key');
@@ -42,7 +43,7 @@ describe('useTMDBCache', () => {
 
     it('debe recuperar datos válidos del sessionStorage mediante getCachedData', () => {
         vi.setSystemTime(new Date('2026-01-01T10:00:00Z'));
-        const mockData: any = { page: 1, results: [], total_pages: 1, total_results: 0 };
+        const mockData: TMDBDiscoverResponse = { page: 1, results: [], total_pages: 1, total_results: 0 };
         sessionStorage.setItem('test_key_valid', JSON.stringify({
             timestamp: Date.now(),
             data: mockData
@@ -55,7 +56,7 @@ describe('useTMDBCache', () => {
 
     it('debe descartar y limpiar datos del sessionStorage si superan el TTL (5 min)', () => {
         const pastTime = new Date('2026-01-01T09:50:00Z').getTime(); // Hace 10 minutos
-        const mockData: any = { page: 1, results: [], total_pages: 1, total_results: 0 };
+        const mockData: TMDBDiscoverResponse = { page: 1, results: [], total_pages: 1, total_results: 0 };
         sessionStorage.setItem('test_key_expired', JSON.stringify({
             timestamp: pastTime,
             data: mockData

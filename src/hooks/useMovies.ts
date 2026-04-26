@@ -58,7 +58,7 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
 
     // 1. Wait for prefetch if applicable (only page 1, no filters)
     if (currentPage === 1 && !currentGenre && !currentYear) {
-      const prefetch = (window as any).__cineswipe_prefetch__;
+      const prefetch = (window as Window & { __cineswipe_prefetch__?: Promise<void> }).__cineswipe_prefetch__;
       if (prefetch) await prefetch;
     }
 
@@ -120,9 +120,10 @@ export const useMovies = (options: UseMoviesOptions = {}): UseMoviesReturn => {
         }));
         updateHasMore(currentPage < data.total_pages);
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError' || !isMounted) return;
-      setState(prev => ({ ...prev, error: err.message, loading: false }));
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      if (error.name === 'AbortError' || !isMounted) return;
+      setState(prev => ({ ...prev, error: error.message, loading: false }));
     }
   }, [getCacheKey, getCachedData, saveToCache, updateHasMore]);
 
